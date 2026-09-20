@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.cloudfoundry.client.v3.BuildpackData;
+import org.cloudfoundry.client.v3.ClientV3Exception;
 import org.cloudfoundry.client.v3.Lifecycle;
 import org.cloudfoundry.client.v3.LifecycleType;
 import org.cloudfoundry.client.v3.Metadata;
@@ -35,6 +36,7 @@ public class CFAccessorMock implements CFAccessor {
 	public static final String UNITTEST_SPACE_UUID = "db08be9a-2fa4-11e8-b467-0ed5f89f718b";
 	public static final String UNITTEST_SPACE_UUID_DOESNOTEXIST = "db08be9a-2fa4-11e8-b467-0ed5f89f718b-doesnotexist";
 	public static final String UNITTEST_SPACE_UUID_EXCEPTION = "db08be9a-2fa4-11e8-b467-0ed5f89f718b-exception";
+	public static final String UNITTEST_SPACE_UUID_APILOCKED = "db08be9a-2fa4-11e8-b467-0ed5f89f718b-apilocked";
 	public static final String UNITTEST_APP1_UUID = "55820b2c-2fa5-11e8-b467-0ed5f89f718b";
 	public static final String UNITTEST_APP2_UUID = "5a0ead6c-2fa5-11e8-b467-0ed5f89f718b";
 	public static final String UNITTEST_APP3_UUID = "4b0ead6c-2fa5-11e8-b467-0ed5f89f718b";
@@ -96,6 +98,11 @@ public class CFAccessorMock implements CFAccessor {
 					.map(x -> {
 						throw new Error("exception org name provided");
 					});
+		} else if ("apilocked".equals(orgName)) {
+			return Mono.just(org.cloudfoundry.client.v3.organizations.ListOrganizationsResponse.builder().build())
+					.map(x -> {
+						throw new ClientV3Exception(503, List.of());
+					});
 		}
 		Assertions.fail("Invalid OrgId request");
 		return null;
@@ -143,6 +150,19 @@ public class CFAccessorMock implements CFAccessor {
 				return Mono.just(org.cloudfoundry.client.v3.spaces.ListSpacesResponse.builder().build()).map(x -> {
 					throw new Error("exception space name provided");
 				});
+			} else if ("apilocked".equals(spaceName)) {
+				return Mono.just(org.cloudfoundry.client.v3.spaces.ListSpacesResponse.builder().build()).map(x -> {
+					throw new ClientV3Exception(503, List.of());
+				});
+			} else if ("unittestspace-apilocked".equals(spaceName)) {
+				org.cloudfoundry.client.v3.spaces.SpaceResource sr = org.cloudfoundry.client.v3.spaces.SpaceResource
+						.builder().name(spaceName).createdAt(CREATED_AT_TIMESTAMP).id(UNITTEST_SPACE_UUID_APILOCKED)
+						.build();
+				List<org.cloudfoundry.client.v3.spaces.SpaceResource> list = new LinkedList<>();
+				list.add(sr);
+				org.cloudfoundry.client.v3.spaces.ListSpacesResponse resp = org.cloudfoundry.client.v3.spaces.ListSpacesResponse
+						.builder().addAllResources(list).build();
+				return Mono.just(resp);
 			}
 		}
 
@@ -208,6 +228,11 @@ public class CFAccessorMock implements CFAccessor {
 			return Mono.just(ListApplicationsResponse.builder().build())
 					.map(x -> {
 						throw new Error("exception on AllAppIdsInSpace");
+					});
+		} else if (UNITTEST_SPACE_UUID_APILOCKED.equals(spaceId)) {
+			return Mono.just(ListApplicationsResponse.builder().build())
+					.map(x -> {
+						throw new ClientV3Exception(503, List.of());
 					});
 		}
 

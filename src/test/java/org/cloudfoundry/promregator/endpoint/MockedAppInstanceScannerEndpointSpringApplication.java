@@ -1,5 +1,8 @@
 package org.cloudfoundry.promregator.endpoint;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -127,6 +130,11 @@ public class MockedAppInstanceScannerEndpointSpringApplication {
 		}
 	}
 	
+	@Bean
+	public Clock clock() {
+		return Clock.fixed(Instant.parse("2007-12-03T10:15:30.00Z"), ZoneId.of("UTC"));
+	}
+
 	@Bean
 	public CFAccessor cfAccessor() {
 		return new MockedCFAccessorCache();

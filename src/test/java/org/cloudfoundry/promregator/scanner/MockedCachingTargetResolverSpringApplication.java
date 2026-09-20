@@ -1,7 +1,13 @@
 package org.cloudfoundry.promregator.scanner;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
 import org.cloudfoundry.promregator.cfaccessor.CFAccessor;
 import org.cloudfoundry.promregator.cfaccessor.CFAccessorMock;
@@ -49,29 +55,53 @@ public class MockedCachingTargetResolverSpringApplication {
 			rTarget2 = new ResolvedTarget(target2);
 		}
 		
+		private Set<Target> targetsToReportAsApiLocked = Collections.emptySet();
+
 		@Override
-		public List<ResolvedTarget> resolveTargets(List<Target> configTarget) {
+		public TargetResolutionResult resolveTargets(List<Target> configTarget) {
 			List<ResolvedTarget> response = new LinkedList<>();
-			
+
 			for (Target t : configTarget) {
 				if (t == target1) {
 					this.requestForTarget1 = true;
-					response.add(rTarget1);
 				} else if (t == target2) {
 					this.requestForTarget2 = true;
-					response.add(rTarget2);
 				} else if (t == targetAllInSpace) {
 					this.requestForTargetAllInSpace = true;
+				} else if (t == targetRegex) {
+					this.requestForTargetWithRegex = true;
+				}
+
+				if (this.targetsToReportAsApiLocked.contains(t)) {
+					continue;
+				}
+
+				if (t == target1) {
+					response.add(rTarget1);
+				} else if (t == target2) {
+					response.add(rTarget2);
+				} else if (t == targetAllInSpace) {
 					response.add(rTarget1);
 					response.add(rTarget2);
 				} else if (t == targetRegex) {
-					this.requestForTargetWithRegex = true;
 					response.add(rTarget1);
 					response.add(rTarget2);
 				}
 			}
-			
-			return response;
+
+			Set<Target> apiLocked = new HashSet<>(configTarget);
+			apiLocked.retainAll(this.targetsToReportAsApiLocked);
+
+			return new TargetResolutionResult(response, apiLocked);
+		}
+
+		/**
+		 * Configures which of the well-known static targets should be reported as
+		 * API-locked (rather than actually resolved) on the next {@link #resolveTargets(List)}
+		 * call, simulating a Cloud Foundry API locked for a backup.
+		 */
+		public void setTargetsToReportAsApiLocked(Set<Target> targetsToReportAsApiLocked) {
+			this.targetsToReportAsApiLocked = targetsToReportAsApiLocked;
 		}
 
 		public boolean isRequestForTarget1() {
@@ -102,7 +132,12 @@ public class MockedCachingTargetResolverSpringApplication {
 	public CFAccessor cfAccessor() {
 		return new CFAccessorMock();
 	}
-	
+
+	@Bean
+	public Clock clock() {
+		return Clock.fixed(Instant.parse("2007-12-03T10:15:30.00Z"), ZoneId.of("UTC"));
+	}
+
 	@Bean
 	public TargetResolver targetResolver() {
 		return new MockedTargetResolver();

@@ -28,3 +28,16 @@ If the Caffeine Cache still has an old value for the key in the cache, it will r
 ## Cache Invalidation
 
 Independent of the type of cache, it can be invalidated manually. For more information refer to the [page "Cache Invalidation"](invalidate-cache.md).
+
+## Resolver Cache and a Locked Cloud Foundry API
+
+The Resolver Cache (cf. [page "Cache Invalidation"](invalidate-cache.md)) otherwise follows the
+"Classical Cache" behavior described above (enforced eviction on timeout). It makes one exception:
+if refreshing an expired entry fails specifically because the Cloud Foundry API reports itself as
+locked (HTTP 503, returned by design while its backing database is being backed up), the previous
+value is kept and served instead of being evicted. Since a locked API implies the underlying
+org/space/app configuration cannot have changed, the previously resolved value is still accurate.
+The affected entry is retried on every subsequent request while the API remains locked (no
+backoff); as soon as a refresh succeeds again, the cache is updated normally. This exception does
+not apply to any other kind of failure (e.g. network errors, timeouts, or any other CF API error),
+for which the entry is still evicted as usual.

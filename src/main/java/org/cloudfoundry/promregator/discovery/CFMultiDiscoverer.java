@@ -18,6 +18,7 @@ import org.cloudfoundry.promregator.messagebus.MessageBusTopic;
 import org.cloudfoundry.promregator.scanner.AppInstanceScanner;
 import org.cloudfoundry.promregator.scanner.Instance;
 import org.cloudfoundry.promregator.scanner.ResolvedTarget;
+import org.cloudfoundry.promregator.scanner.TargetResolutionResult;
 import org.cloudfoundry.promregator.scanner.TargetResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,13 +61,14 @@ public class CFMultiDiscoverer implements CFDiscoverer {
 	public List<Instance> discover(@Nullable Predicate<? super String> applicationIdFilter, @Nullable Predicate<? super Instance> instanceFilter) {
 		log.debug("We have {} targets configured", this.promregatorConfiguration.getTargets().size());
 		
-		List<ResolvedTarget> resolvedTargets = this.targetResolver.resolveTargets(this.promregatorConfiguration.getTargets());
-		if (resolvedTargets == null) {
+		TargetResolutionResult resolutionResult = this.targetResolver.resolveTargets(this.promregatorConfiguration.getTargets());
+		if (resolutionResult == null) {
 			log.warn("Target resolved was unable to resolve configured targets");
 			return Collections.emptyList();
 		}
+		List<ResolvedTarget> resolvedTargets = resolutionResult.getResolvedTargets();
 		log.debug("Raw list contains {} resolved targets", resolvedTargets.size());
-		
+
 		List<Instance> instanceList = this.appInstanceScanner.determineInstancesFromTargets(resolvedTargets, applicationIdFilter, instanceFilter);
 		if (instanceList == null) {
 			log.warn("Instance Scanner unable to determine instances from provided targets");

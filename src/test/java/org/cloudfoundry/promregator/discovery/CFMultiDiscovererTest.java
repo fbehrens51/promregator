@@ -17,6 +17,7 @@ import org.cloudfoundry.promregator.messagebus.MessageBusTopic;
 import org.cloudfoundry.promregator.messagebus.MessageSubscriber;
 import org.cloudfoundry.promregator.scanner.Instance;
 import org.cloudfoundry.promregator.scanner.ResolvedTarget;
+import org.cloudfoundry.promregator.scanner.TargetResolutionResult;
 import org.cloudfoundry.promregator.scanner.TargetResolver;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
@@ -71,7 +72,7 @@ public class CFMultiDiscovererTest implements MessageSubscriber {
 		aTarget.setPath("/metrics");
 		aTarget.setOriginalTarget(new Target());
 		resolvedTargets.add(aTarget);
-		when(targetResolver.resolveTargets(any())).thenReturn(resolvedTargets);
+		when(targetResolver.resolveTargets(any())).thenReturn(new TargetResolutionResult(resolvedTargets));
 
 		List<Instance> result = this.cfDiscoverer.discover(null, null);
 		

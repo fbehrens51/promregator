@@ -1,7 +1,11 @@
 package org.cloudfoundry.promregator.scanner;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
 import org.cloudfoundry.promregator.JUnitTestUtils;
 import org.cloudfoundry.promregator.config.Target;
@@ -22,16 +26,21 @@ public class CachingTargetResolverTest {
 
 	@Autowired
 	private TargetResolver targetResolver;
-	
+
 	@Autowired
 	private CachingTargetResolver cachingTargetResolver;
-	
+
+	@Autowired
+	private Clock clock;
+
 	@AfterEach
 	void resetFlags() {
 		this.cachingTargetResolver.invalidateCache();
-		
-		( (MockedTargetResolver) targetResolver).resetRequestFlags();
-		
+		this.cachingTargetResolver.setClock(this.clock);
+
+		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
+		mtr.resetRequestFlags();
+		mtr.setTargetsToReportAsApiLocked(Collections.emptySet());
 	}
 	@Test
 	void testTwoPlainTargets() {
@@ -39,7 +48,7 @@ public class CachingTargetResolverTest {
 		list.add(MockedTargetResolver.target1);
 		list.add(MockedTargetResolver.target2);
 		
-		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		
 		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
 		Assertions.assertTrue(mtr.isRequestForTarget1());
@@ -70,7 +79,7 @@ public class CachingTargetResolverTest {
 		List<Target> list = new LinkedList<>();
 		list.add(MockedTargetResolver.targetAllInSpace);
 		
-		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		
 		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
 		Assertions.assertFalse(mtr.isRequestForTarget1());
@@ -101,7 +110,7 @@ public class CachingTargetResolverTest {
 		list.add(MockedTargetResolver.target1);
 		
 		// fill the cache
-		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		
 		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
 		Assertions.assertTrue(mtr.isRequestForTarget1());
@@ -117,7 +126,7 @@ public class CachingTargetResolverTest {
 		
 		mtr.resetRequestFlags();
 		
-		actualList = this.cachingTargetResolver.resolveTargets(list);
+		actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		Assertions.assertFalse(mtr.isRequestForTarget1());
 		Assertions.assertFalse(mtr.isRequestForTarget2());
 		Assertions.assertFalse(mtr.isRequestForTargetAllInSpace());
@@ -135,7 +144,7 @@ public class CachingTargetResolverTest {
 		list.add(MockedTargetResolver.target1);
 		
 		// fill the cache
-		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		
 		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
 		Assertions.assertTrue(mtr.isRequestForTarget1());
@@ -153,7 +162,7 @@ public class CachingTargetResolverTest {
 		
 		list.add(MockedTargetResolver.target2);
 		
-		actualList = this.cachingTargetResolver.resolveTargets(list);
+		actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		Assertions.assertFalse(mtr.isRequestForTarget1());
 		Assertions.assertTrue(mtr.isRequestForTarget2());
 		Assertions.assertFalse(mtr.isRequestForTargetAllInSpace());
@@ -181,7 +190,7 @@ public class CachingTargetResolverTest {
 		list.add(MockedTargetResolver.target1);
 		list.add(MockedTargetResolver.targetRegex);
 		
-		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
 		
 		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
 		Assertions.assertTrue(mtr.isRequestForTarget1());
@@ -204,5 +213,55 @@ public class CachingTargetResolverTest {
 		}
 		Assertions.assertTrue(target1Found);
 		Assertions.assertTrue(target2Found);
+	}
+
+	@Test
+	void testStaleResolutionIsKeptWhileApiIsLocked() {
+		List<Target> list = new LinkedList<>();
+		list.add(MockedTargetResolver.target1);
+
+		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
+
+		// fill the cache
+		List<ResolvedTarget> actualList = this.cachingTargetResolver.resolveTargets(list).getResolvedTargets();
+		Assertions.assertTrue(mtr.isRequestForTarget1());
+		Assertions.assertEquals(1, actualList.size());
+		Assertions.assertEquals(MockedTargetResolver.rTarget1, actualList.get(0));
+
+		mtr.resetRequestFlags();
+
+		// advance the clock past the default 300s TTL and have the parent resolver
+		// report the target as API-locked (simulating a CF backup window) instead of
+		// actually resolving it
+		this.cachingTargetResolver.setClock(Clock.offset(this.clock, Duration.ofSeconds(301)));
+		mtr.setTargetsToReportAsApiLocked(Set.of(MockedTargetResolver.target1));
+
+		TargetResolutionResult result = this.cachingTargetResolver.resolveTargets(list);
+		Assertions.assertTrue(mtr.isRequestForTarget1(), "expired entry should still trigger a refresh attempt");
+		Assertions.assertEquals(1, result.getResolvedTargets().size(), "stale value should still be served");
+		Assertions.assertEquals(MockedTargetResolver.rTarget1, result.getResolvedTargets().get(0));
+		Assertions.assertTrue(result.getApiLockedTargets().isEmpty(), "a fallback was available, so this isn't reported as locked with no data");
+
+		mtr.resetRequestFlags();
+
+		// without advancing the clock further, the entry is still considered expired
+		// (its timestamp was never refreshed while locked) and is retried again -
+		// no backoff
+		this.cachingTargetResolver.resolveTargets(list);
+		Assertions.assertTrue(mtr.isRequestForTarget1(), "locked entries are retried on every call, without backoff");
+	}
+
+	@Test
+	void testApiLockedWithoutPriorDataReturnsNothing() {
+		List<Target> list = new LinkedList<>();
+		list.add(MockedTargetResolver.target1);
+
+		MockedTargetResolver mtr = (MockedTargetResolver) targetResolver;
+		mtr.setTargetsToReportAsApiLocked(Set.of(MockedTargetResolver.target1));
+
+		TargetResolutionResult result = this.cachingTargetResolver.resolveTargets(list);
+		Assertions.assertTrue(mtr.isRequestForTarget1());
+		Assertions.assertTrue(result.getResolvedTargets().isEmpty(), "no data was ever cached, so there is nothing to fall back to");
+		Assertions.assertEquals(Set.of(MockedTargetResolver.target1), result.getApiLockedTargets());
 	}
 }

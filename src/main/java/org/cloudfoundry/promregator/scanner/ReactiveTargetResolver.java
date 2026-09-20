@@ -5,9 +5,12 @@ import static org.cloudfoundry.promregator.cfaccessor.ReactiveCFAccessorImpl.INV
 import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.cloudfoundry.AbstractCloudFoundryException;
 import org.cloudfoundry.client.v3.applications.ApplicationResource;
 import org.cloudfoundry.client.v3.applications.ApplicationState;
 import org.cloudfoundry.client.v3.applications.ListApplicationsResponse;
@@ -17,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -224,27 +228,53 @@ public class ReactiveTargetResolver implements TargetResolver {
 	}
 
 	@Override
-	public List<ResolvedTarget> resolveTargets(List<Target> configTargets) {
-		return Flux.fromIterable(configTargets)
+	public TargetResolutionResult resolveTargets(List<Target> configTargets) {
+		Set<Target> apiLockedTargets = ConcurrentHashMap.newKeySet();
+
+		List<ResolvedTarget> resolved = Flux.fromIterable(configTargets)
 				.parallel()
 				.runOn(Schedulers.parallel())
 				.map(IntermediateTarget::new)
-				.flatMap(this::resolveOrg)
+				.flatMap(it -> this.resolveOrg(it, apiLockedTargets))
 				.log(log.getName() + ".resolveOrg")
-				.flatMap(this::resolveSpace)
+				.flatMap(it -> this.resolveSpace(it, apiLockedTargets))
 				.log(log.getName() + ".resolveSpace")
-				.flatMap (this::resolveApplication)
+				.flatMap(it -> this.resolveApplication(it, apiLockedTargets))
 				.log(log.getName() + ".resolveApplication")
-				.flatMap(this::resolveAnnotations)
+				.flatMap(it -> this.resolveAnnotations(it, apiLockedTargets))
 				.log(log.getName() + ".resolveAnnotations")
 				.map(IntermediateTarget::toResolvedTarget)
 				.sequential()
 				.distinct().collectList()
 				.doOnNext(it -> log.debug("Successfully resolved {} configuration targets to {} resolved targets", configTargets.size(), it.size()))
 				.block();
+
+		return new TargetResolutionResult(resolved, apiLockedTargets);
 	}
 
-	private Flux<IntermediateTarget> resolveOrg(IntermediateTarget it) {
+	/**
+	 * Determines whether the given error indicates that the Cloud Foundry API reported itself
+	 * as locked (HTTP 503), e.g. because its backing database is currently being backed up. A
+	 * locked API implies the underlying org/space/app configuration has not changed, unlike any
+	 * other kind of failure. Package-private for direct unit testing.
+	 */
+	static boolean isApiLocked(Throwable e) {
+		Throwable t = e;
+		while (t != null) {
+			Throwable unwrapped = Exceptions.unwrap(t);
+			if (unwrapped instanceof AbstractCloudFoundryException afe && afe.getStatusCode() == 503) {
+				return true;
+			}
+			if (Exceptions.isRetryExhausted(unwrapped)) {
+				t = unwrapped.getCause();
+				continue;
+			}
+			return false;
+		}
+		return false;
+	}
+
+	private Flux<IntermediateTarget> resolveOrg(IntermediateTarget it, Set<Target> apiLockedTargets) {
 		/* NB: Now we have to consider three cases:
 		 * Case 1: both orgName and orgRegex is empty => select all orgs
 		 * Case 2: orgName is null, but orgRegex is filled => filter all orgs with the regex
@@ -269,17 +299,29 @@ public class ReactiveTargetResolver implements TargetResolver {
 						return it;
 					})
 					.doOnError(e -> log.warn("Error on retrieving org id for org '{}'", it.getConfigTarget().getOrgName(), e))
-					.onErrorResume(__ -> Mono.empty());
-			
+					.onErrorResume(e -> {
+						if (isApiLocked(e)) {
+							apiLockedTargets.add(it.getConfigTarget());
+						}
+						return Mono.empty();
+					});
+
 			return itMono.flux();
 		}
-		
+
 		// Case 1 & 2: Get all orgs from the platform
 		Mono<org.cloudfoundry.client.v3.organizations.ListOrganizationsResponse> responseMono = this.cfAccessor.retrieveAllOrgIdsV3();
 
 		Flux<org.cloudfoundry.client.v3.organizations.OrganizationResource> orgResFlux = responseMono.map(org.cloudfoundry.client.v3.organizations.ListOrganizationsResponse::getResources)
-			.flatMapMany(Flux::fromIterable);
-		
+			.flatMapMany(Flux::fromIterable)
+			.onErrorResume(e -> {
+				if (isApiLocked(e)) {
+					apiLockedTargets.add(it.getConfigTarget());
+					return Flux.empty();
+				}
+				return Flux.error(e);
+			});
+
 		if (it.getConfigTarget().getOrgRegex() != null) {
 			// Case 2
 			final Pattern filterPattern = Pattern.compile(it.getConfigTarget().getOrgRegex(), Pattern.CASE_INSENSITIVE);
@@ -299,7 +341,7 @@ public class ReactiveTargetResolver implements TargetResolver {
 		});
 	}
 	
-	private Flux<IntermediateTarget> resolveSpace(IntermediateTarget it) {
+	private Flux<IntermediateTarget> resolveSpace(IntermediateTarget it, Set<Target> apiLockedTargets) {
 		/* NB: Now we have to consider three cases:
 		 * Case 1: both spaceName and spaceRegex is empty => select all spaces (within the org)
 		 * Case 2: spaceName is null, but spaceRegex is filled => filter all spaces with the regex
@@ -323,17 +365,29 @@ public class ReactiveTargetResolver implements TargetResolver {
 						it.setResolvedSpaceId(res.getId());
 						return it;
 					}).doOnError(e -> log.warn("Error on retrieving space id for org '{}' and space '{}'", it.getResolvedOrgName(), it.getConfigTarget().getSpaceName(), e))
-					.onErrorResume(__ -> Mono.empty());
-			
+					.onErrorResume(e -> {
+						if (isApiLocked(e)) {
+							apiLockedTargets.add(it.getConfigTarget());
+						}
+						return Mono.empty();
+					});
+
 			return itMono.flux();
 		}
-		
+
 		// Case 1 & 2: Get all spaces in the current org
 		Mono<org.cloudfoundry.client.v3.spaces.ListSpacesResponse> responseMono = this.cfAccessor.retrieveSpaceIdsInOrgV3(it.getResolvedOrgId());
 
 		Flux<org.cloudfoundry.client.v3.spaces.SpaceResource> spaceResFlux = responseMono.map(org.cloudfoundry.client.v3.spaces.ListSpacesResponse::getResources)
-			.flatMapMany(Flux::fromIterable);
-		
+			.flatMapMany(Flux::fromIterable)
+			.onErrorResume(e -> {
+				if (isApiLocked(e)) {
+					apiLockedTargets.add(it.getConfigTarget());
+					return Flux.empty();
+				}
+				return Flux.error(e);
+			});
+
 		if (it.getConfigTarget().getSpaceRegex() != null) {
 			// Case 2
 			final Pattern filterPattern = Pattern.compile(it.getConfigTarget().getSpaceRegex(), Pattern.CASE_INSENSITIVE);
@@ -353,7 +407,7 @@ public class ReactiveTargetResolver implements TargetResolver {
 		});
 	}
 	
-	private Flux<IntermediateTarget> resolveApplication(IntermediateTarget it) {
+	private Flux<IntermediateTarget> resolveApplication(IntermediateTarget it, Set<Target> apiLockedTargets) {
 		/* NB: Now we have to consider three cases:
 		 * Case 1: both applicationName and applicationRegex is empty => select all applications (in the space)
 		 * Case 2: applicationName is null, but applicationRegex is filled => filter all applications with the regex
@@ -376,7 +430,12 @@ public class ReactiveTargetResolver implements TargetResolver {
 							logEmptyTarget.warn("Application id could not be found for org '{}', space '{}' and application '{}'. Check your configuration of targets; skipping it for now; this message may be muted by setting the log level of the emitting logger accordingly!", it.getResolvedOrgName(), it.getResolvedSpaceName(), it.getConfigTarget().getApplicationName());
 						}
 					})
-					.onErrorResume(e -> Mono.empty())
+					.onErrorResume(e -> {
+						if (isApiLocked(e)) {
+							apiLockedTargets.add(it.getConfigTarget());
+						}
+						return Mono.empty();
+					})
 					.filter( res -> this.isApplicationInScrapableState(res.getState()))
 					.map(res -> {
 						it.setResolvedApplicationName(res.getName());
@@ -385,18 +444,28 @@ public class ReactiveTargetResolver implements TargetResolver {
 					}).doOnError(e ->
 						log.warn("Error on retrieving application id for org '{}', space '{}' and application '{}'", it.getResolvedOrgName(), it.getResolvedSpaceName(), it.getConfigTarget().getApplicationName(), e)
 					)
-					.onErrorResume(__ -> Mono.empty());
-			
+					.onErrorResume(e -> {
+						if (isApiLocked(e)) {
+							apiLockedTargets.add(it.getConfigTarget());
+						}
+						return Mono.empty();
+					});
+
 			return itMono.flux();
 		}
-		
+
 		// Case 1 & 2: Get all applications in the current space
 		Mono<ListApplicationsResponse> responseMono = this.cfAccessor.retrieveAllApplicationsInSpaceV3(it.getResolvedOrgId(), it.getResolvedSpaceId());
 
 		Flux<ApplicationResource> appResFlux = responseMono.map(ListApplicationsResponse::getResources)
 			.flatMapMany(Flux::fromIterable)
 			.doOnError(e -> log.warn("Error on retrieving list of applications in org '{}' and space '{}'", it.getResolvedOrgName(), it.getResolvedSpaceName(), e))
-			.onErrorResume(__ -> Flux.empty());
+			.onErrorResume(e -> {
+				if (isApiLocked(e)) {
+					apiLockedTargets.add(it.getConfigTarget());
+				}
+				return Flux.empty();
+			});
 		
 		if (it.getConfigTarget().getApplicationRegex() != null) {
 			// Case 2
@@ -420,7 +489,7 @@ public class ReactiveTargetResolver implements TargetResolver {
 		});
 	}
 
-	private Flux<IntermediateTarget> resolveAnnotations(IntermediateTarget it) {
+	private Flux<IntermediateTarget> resolveAnnotations(IntermediateTarget it, Set<Target> apiLockedTargets) {
 		if (Boolean.TRUE.equals(it.getConfigTarget().getKubernetesAnnotations())) {
 			Mono<ListApplicationsResponse> response = this.cfAccessor
 				.retrieveAllApplicationsInSpaceV3(it.getResolvedOrgId(), it.getResolvedSpaceId());
@@ -443,7 +512,14 @@ public class ReactiveTargetResolver implements TargetResolver {
 						}).findFirst().orElseGet(Mono::empty);
 			}).doOnError(e ->
 				 log.warn("Error on retrieving application annotations for org '{}', space '{}' and application '{}'.",
-						it.getResolvedOrgName(), it.getResolvedSpaceName(), it.getConfigTarget().getApplicationName(), e)).flux();
+						it.getResolvedOrgName(), it.getResolvedSpaceName(), it.getConfigTarget().getApplicationName(), e))
+				.onErrorResume(e -> {
+					if (isApiLocked(e)) {
+						apiLockedTargets.add(it.getConfigTarget());
+						return Mono.empty();
+					}
+					return Mono.error(e);
+				}).flux();
 		}
 
 		return Mono.just(it).flux();

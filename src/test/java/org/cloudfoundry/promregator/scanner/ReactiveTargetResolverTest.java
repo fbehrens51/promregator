@@ -2,7 +2,9 @@ package org.cloudfoundry.promregator.scanner;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
+import org.cloudfoundry.client.v3.ClientV3Exception;
 import org.cloudfoundry.promregator.JUnitTestUtils;
 import org.cloudfoundry.promregator.cfaccessor.CFAccessor;
 import org.cloudfoundry.promregator.cfaccessor.CFAccessorMock;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+
+import reactor.core.Exceptions;
 
 @SpringBootTest(classes = MockedReactiveTargetResolverSpringApplication.class)
 public class ReactiveTargetResolverTest {
@@ -46,7 +50,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -76,7 +80,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(4, actualList.size());
 		
@@ -115,7 +119,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -146,7 +150,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -170,7 +174,7 @@ public class ReactiveTargetResolverTest {
 		
 		List<Target> list = new LinkedList<>();
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertNotNull(actualList);
 		Assertions.assertEquals(0, actualList.size());
@@ -187,7 +191,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(0, actualList.size());
 		
@@ -209,7 +213,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(0, actualList.size());
 		
@@ -239,7 +243,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -271,7 +275,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -303,7 +307,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -335,7 +339,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -372,7 +376,7 @@ public class ReactiveTargetResolverTest {
 		
 		// NB: The regex target (first one) overlaps with the already fully resolved target (second one)
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(3, actualList.size()); // and not 4!
 		
@@ -416,7 +420,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -444,7 +448,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -472,7 +476,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -498,7 +502,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -526,7 +530,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -554,7 +558,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -583,7 +587,7 @@ public class ReactiveTargetResolverTest {
 		t.setProtocol("https");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(1, actualList.size());
 		
@@ -605,7 +609,7 @@ public class ReactiveTargetResolverTest {
 		t.setOrgName("doesnotexist");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(0, actualList.size());
 		
@@ -621,7 +625,7 @@ public class ReactiveTargetResolverTest {
 		t.setSpaceName("doesnotexist");
 		list.add(t);
 		
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 		
 		Assertions.assertEquals(0, actualList.size());
 	}
@@ -640,7 +644,7 @@ public class ReactiveTargetResolverTest {
 		list.add(t);
 		// testapp2 has an invalid scrape value
 
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 
 		Assertions.assertEquals(0, actualList.size());
 		Mockito.verify(this.cfAccessor, Mockito.times(2)).retrieveAllApplicationsInSpaceV3(CFAccessorMock.UNITTEST_ORG_UUID,
@@ -660,7 +664,7 @@ public class ReactiveTargetResolverTest {
 		t.setKubernetesAnnotations(true);
 		list.add(t);
 
-		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list);
+		List<ResolvedTarget> actualList = this.targetResolver.resolveTargets(list).getResolvedTargets();
 
 		Assertions.assertEquals(2, actualList.size());
 
@@ -683,5 +687,122 @@ public class ReactiveTargetResolverTest {
 		Assertions.assertEquals(t.getProtocol(), rt.getProtocol());
 		Mockito.verify(this.cfAccessor, Mockito.times(5)).retrieveAllApplicationsInSpaceV3(CFAccessorMock.UNITTEST_ORG_UUID,
 																						   CFAccessorMock.UNITTEST_SPACE_UUID);
+	}
+
+	@Test
+	void testExceptionOrgNameToResolveDoesNotAffectOtherTargetsInSameBatch() {
+		// the "exception" org name path is swallowed per-item (case 3, named org),
+		// so it must not affect an unrelated target resolved in the same batch
+		List<Target> list = new LinkedList<>();
+
+		Target locked = new Target();
+		locked.setOrgName("exception");
+		locked.setSpaceName("unittestspace");
+		locked.setPath("path");
+		locked.setProtocol("https");
+		list.add(locked);
+
+		Target ok = new Target();
+		ok.setOrgName("unittestorg");
+		ok.setSpaceName("unittestspace");
+		ok.setApplicationName("testapp2");
+		ok.setPath("path");
+		ok.setProtocol("https");
+		list.add(ok);
+
+		TargetResolutionResult result = this.targetResolver.resolveTargets(list);
+
+		Assertions.assertEquals(1, result.getResolvedTargets().size());
+		Assertions.assertEquals(ok, result.getResolvedTargets().get(0).getOriginalTarget());
+		// a plain java.lang.Error is not an API-lock signal, so it must not be reported as such
+		Assertions.assertTrue(result.getApiLockedTargets().isEmpty());
+	}
+
+	@Test
+	void testApiLockedOrgNameIsReportedAsLockedNotAsEmpty() {
+		List<Target> list = new LinkedList<>();
+
+		Target locked = new Target();
+		locked.setOrgName("apilocked");
+		locked.setSpaceName("unittestspace");
+		locked.setPath("path");
+		locked.setProtocol("https");
+		list.add(locked);
+
+		Target ok = new Target();
+		ok.setOrgName("unittestorg");
+		ok.setSpaceName("unittestspace");
+		ok.setApplicationName("testapp2");
+		ok.setPath("path");
+		ok.setProtocol("https");
+		list.add(ok);
+
+		TargetResolutionResult result = this.targetResolver.resolveTargets(list);
+
+		Assertions.assertEquals(1, result.getResolvedTargets().size());
+		Assertions.assertEquals(ok, result.getResolvedTargets().get(0).getOriginalTarget());
+		Assertions.assertEquals(Set.of(locked), result.getApiLockedTargets());
+	}
+
+	@Test
+	void testApiLockedSpaceNameIsReportedAsLocked() {
+		List<Target> list = new LinkedList<>();
+
+		Target locked = new Target();
+		locked.setOrgName("unittestorg");
+		locked.setSpaceName("apilocked");
+		locked.setPath("path");
+		locked.setProtocol("https");
+		list.add(locked);
+
+		TargetResolutionResult result = this.targetResolver.resolveTargets(list);
+
+		Assertions.assertTrue(result.getResolvedTargets().isEmpty());
+		Assertions.assertEquals(Set.of(locked), result.getApiLockedTargets());
+	}
+
+	@Test
+	void testApiLockedApplicationListingInSpaceIsReportedAsLocked() {
+		// exercises the wildcard/regex "list all applications in space" path, which
+		// resolves against a space whose applications listing itself is 503-locked
+		List<Target> list = new LinkedList<>();
+
+		Target locked = new Target();
+		locked.setOrgName("unittestorg");
+		locked.setSpaceName("unittestspace-apilocked");
+		locked.setApplicationRegex(".*");
+		locked.setPath("path");
+		locked.setProtocol("https");
+		list.add(locked);
+
+		TargetResolutionResult result = this.targetResolver.resolveTargets(list);
+
+		Assertions.assertTrue(result.getResolvedTargets().isEmpty());
+		Assertions.assertEquals(Set.of(locked), result.getApiLockedTargets());
+	}
+
+	@Test
+	void testIsApiLockedDetectsBare503() {
+		Assertions.assertTrue(ReactiveTargetResolver.isApiLocked(new ClientV3Exception(503, List.of())));
+	}
+
+	@Test
+	void testIsApiLockedDetectsRetryExhausted503() {
+		// ReactiveCFPaginatedRequestFetcher wraps an exhausted retry's cause in a
+		// reactor.core.Exceptions$RetryExhaustedException - a real 503 in production
+		// always arrives wrapped like this, not as a bare ClientV3Exception
+		Throwable retryExhausted = Exceptions.retryExhausted("retries exhausted", new ClientV3Exception(503, List.of()));
+		Assertions.assertTrue(ReactiveTargetResolver.isApiLocked(retryExhausted));
+	}
+
+	@Test
+	void testIsApiLockedIgnoresNon503CloudFoundryException() {
+		Assertions.assertFalse(ReactiveTargetResolver.isApiLocked(new ClientV3Exception(404, List.of())));
+	}
+
+	@Test
+	void testIsApiLockedIgnoresUnrelatedException() {
+		Assertions.assertFalse(ReactiveTargetResolver.isApiLocked(new RuntimeException("boom")));
+		Assertions.assertFalse(ReactiveTargetResolver.isApiLocked(new Error("boom")));
 	}
 }
